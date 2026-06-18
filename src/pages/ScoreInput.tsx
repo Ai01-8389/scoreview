@@ -466,7 +466,7 @@ export default function ScoreInput() {
               const rate = subject.fullScore > 0 ? subject.totalScore / subject.fullScore : 0;
               const isSec = isSecondarySubject(subject.subject);
               const assignedResult = isSec && subject.totalScore > 0
-                ? estimateAssignedScore(subject.totalScore, subject.fullScore)
+                ? estimateAssignedScore(subject.totalScore, subject.fullScore, subject.subject)
                 : null;
               return (
                 <GlassCard key={subject.id} className={`p-4 ${isSec ? 'border-cyan-500/10' : ''}`}>

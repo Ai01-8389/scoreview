@@ -24,7 +24,7 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { getSubjectName, SUBJECT_CONFIG } from '@/shared/subjects';
-import { isSecondarySubject, estimateAssignedScore, getLevelTextClass } from '@/shared/assignmentScore';
+import { isSecondarySubject, estimateAssignedScore, getLevelTextClass, SUBJECT_DISTRIBUTIONS } from '@/shared/assignmentScore';
 import { calculateExamAssignedScores } from '@/utils/scoreCalc';
 
 const COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
@@ -259,14 +259,18 @@ export default function SubScoreAnalysis() {
         const latest = sortedExams[sortedExams.length - 1];
         const subject = latest?.subjects.find((s) => s.subject === selectedSubject);
         if (!subject) return null;
-        const result = estimateAssignedScore(subject.totalScore, subject.fullScore);
+        const result = estimateAssignedScore(subject.totalScore, subject.fullScore, selectedSubject);
+        const dist = SUBJECT_DISTRIBUTIONS[selectedSubject];
         return (
           <motion.div variants={item}>
             <GlassCard className="p-5 border-cyan-500/20">
               <h3 className="mb-3 text-sm font-medium text-cyan-400/80">等级赋分信息 · {getSubjectName(selectedSubject)}</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {dist && (
+                <p className="mb-3 text-xs text-white/30">{dist.description}</p>
+              )}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <div>
-                  <p className="text-xs text-white/40 mb-1">卷面原始分</p>
+                  <p className="text-xs text-white/40 mb-1">卷面裸分</p>
                   <p className="text-xl font-bold text-white">{subject.totalScore} <span className="text-sm text-white/30">/ {subject.fullScore}</span></p>
                 </div>
                 <div>
@@ -274,6 +278,9 @@ export default function SubScoreAnalysis() {
                   <p className={`text-xl font-bold ${getLevelTextClass(result.level)}`}>
                     {result.level}
                   </p>
+                  {result.estimatedRawRange.high > 0 && (
+                    <p className="text-xs text-white/30">裸分约{result.estimatedRawRange.low}-{result.estimatedRawRange.high}分可入此等级</p>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs text-white/40 mb-1">赋分后分数</p>
@@ -285,6 +292,13 @@ export default function SubScoreAnalysis() {
                   <p className="text-xl font-bold text-white">{(result.estimatedPercentile * 100).toFixed(1)}%</p>
                   <p className="text-xs text-white/30">即排名前{((1 - result.estimatedPercentile) * 100).toFixed(1)}%</p>
                 </div>
+                {dist && (
+                  <div>
+                    <p className="text-xs text-white/40 mb-1">科目分布特征</p>
+                    <p className="text-sm text-white/50">均值{dist.mean}分 · 最高约{dist.maxObserved}分</p>
+                    <p className="text-xs text-white/30">标准差{dist.stdDev} · 中间大两头小</p>
+                  </div>
+                )}
               </div>
             </GlassCard>
           </motion.div>

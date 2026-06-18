@@ -2,14 +2,14 @@ import type { Exam, SubjectScore } from '@/shared/types';
 import { isSecondarySubject, estimateAssignedScore } from '@/shared/assignmentScore';
 
 /**
- * 为考试中的再选科目计算赋分
+ * 为考试中的再选科目计算赋分（基于各科实际裸分分布）
  */
 export function calculateExamAssignedScores(exam: Exam): Exam {
   return {
     ...exam,
     subjects: exam.subjects.map((s) => {
       if (!isSecondarySubject(s.subject)) return s;
-      const result = estimateAssignedScore(s.totalScore, s.fullScore);
+      const result = estimateAssignedScore(s.totalScore, s.fullScore, s.subject);
       return {
         ...s,
         assignedScore: result.assignedScore,
