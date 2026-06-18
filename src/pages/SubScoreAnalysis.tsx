@@ -24,7 +24,7 @@ import { GlassCard } from '@/components/ui/GlassCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { getSubjectName, SUBJECT_CONFIG } from '@/shared/subjects';
-import { isSecondarySubject, estimateAssignedScore } from '@/shared/assignmentScore';
+import { isSecondarySubject, estimateAssignedScore, getLevelTextClass } from '@/shared/assignmentScore';
 import { calculateExamAssignedScores } from '@/utils/scoreCalc';
 
 const COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
@@ -271,7 +271,7 @@ export default function SubScoreAnalysis() {
                 </div>
                 <div>
                   <p className="text-xs text-white/40 mb-1">赋分等级</p>
-                  <p className={`text-xl font-bold ${result.level >= 'C' ? (result.level === 'C' ? 'text-amber-400' : result.level === 'D+' ? 'text-amber-300' : result.level === 'D' ? 'text-orange-400' : 'text-red-400') : 'text-emerald-400'}`}>
+                  <p className={`text-xl font-bold ${getLevelTextClass(result.level)}`}>
                     {result.level}
                   </p>
                 </div>

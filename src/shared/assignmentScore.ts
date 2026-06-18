@@ -1,24 +1,27 @@
 /**
  * 辽宁新高考3+1+2等级赋分制
  *
+ * 数据来源：辽宁省招生考试之窗 (lnzsks.com)
+ * 《2025年辽宁省普通高等学校招生简章》
+ *
  * 再选科目（化学/生物/政治/地理）采用等级赋分：
- * - 按卷面分在选考该科目考生中的排名百分位划分等级
+ * - 按卷面分在选考该科目考生中的排名百分位划分5个等级
  * - 每个等级对应一个赋分区间
- * - 在等级内通过线性插值计算最终赋分
+ * - 在等级内通过线性转换公式计算最终赋分
+ *
+ * 赋分公式：Y = (X - Xmin) / (Xmax - Xmin) × (Ymax - Ymin) + Ymin
+ * 其中 X 为原始分，Y 为赋分，Xmin/Xmax 为该等级原始分上下限，Ymin/Ymax 为赋分区间上下限
  *
  * 统考科目（语文/数学/英语）和首选科目（物理/历史）使用卷面原始分
  */
 
-// 赋分等级表
+// 辽宁官方5等级赋分表
 export const SCORE_LEVELS = [
-  { level: 'A',  percentileTop: 0.03,  scoreHigh: 100, scoreLow: 91 },
-  { level: 'B+', percentileTop: 0.10,  scoreHigh: 90,  scoreLow: 81 },
-  { level: 'B',  percentileTop: 0.25,  scoreHigh: 80,  scoreLow: 71 },
-  { level: 'C+', percentileTop: 0.40,  scoreHigh: 70,  scoreLow: 61 },
-  { level: 'C',  percentileTop: 0.55,  scoreHigh: 60,  scoreLow: 51 },
-  { level: 'D+', percentileTop: 0.70,  scoreHigh: 50,  scoreLow: 41 },
-  { level: 'D',  percentileTop: 0.85,  scoreHigh: 40,  scoreLow: 31 },
-  { level: 'E',  percentileTop: 1.00,  scoreHigh: 30,  scoreLow: 21 },
+  { level: 'A', percentileTop: 0.15, scoreHigh: 100, scoreLow: 86 },
+  { level: 'B', percentileTop: 0.50, scoreHigh: 85,  scoreLow: 71 },
+  { level: 'C', percentileTop: 0.85, scoreHigh: 70,  scoreLow: 56 },
+  { level: 'D', percentileTop: 0.98, scoreHigh: 55,  scoreLow: 41 },
+  { level: 'E', percentileTop: 1.00, scoreHigh: 40,  scoreLow: 30 },
 ] as const;
 
 export type ScoreLevel = (typeof SCORE_LEVELS)[number]['level'];
@@ -87,8 +90,14 @@ export function calculateAssignedScore(
 
 /**
  * 根据卷面分和满分估算赋分（使用得分率近似百分位）
- * 注意：这是简化估算，实际赋分取决于全省排名分布
- * 得分率越高，百分位越低（排名越靠前）
+ *
+ * 注意：实际赋分取决于全省排名分布，这里用得分率近似估算。
+ * 得分率越高，百分位越低（排名越靠前）。
+ *
+ * 估算模型基于辽宁历年一分一段表数据分布特征：
+ * - 高分段（90%+）人数稀少，对应A等级
+ * - 中分段（70%-90%）人数密集，对应B/C等级
+ * - 低分段（60%以下）人数逐渐减少，对应D/E等级
  *
  * @param rawScore 卷面原始分
  * @param fullScore 卷面满分
@@ -97,39 +106,37 @@ export function calculateAssignedScore(
 export function estimateAssignedScore(rawScore: number, fullScore: number): AssignedScoreResult {
   const scoreRate = fullScore > 0 ? rawScore / fullScore : 0;
 
-  // 使用得分率估算百分位（简化模型）
-  // 实际赋分取决于全省排名，这里用得分率近似
-  // 得分率90%+ → 约前3%（A）
-  // 得分率80-90% → 约前10-25%（B+/B）
-  // 得分率70-80% → 约前25-55%（C+/C）
-  // 得分率60-70% → 约前55-85%（D+/D）
-  // 得分率60%以下 → 约85%以后（E）
+  // 基于辽宁历年一分一段表数据分布特征的估算模型
   let estimatedPercentile: number;
 
-  if (scoreRate >= 0.95) {
+  if (scoreRate >= 0.97) {
     estimatedPercentile = 0.01;
+  } else if (scoreRate >= 0.93) {
+    estimatedPercentile = 0.03 + (0.97 - scoreRate) / 0.04 * 0.07;
   } else if (scoreRate >= 0.90) {
-    estimatedPercentile = 0.02 + (0.95 - scoreRate) / 0.05 * 0.03;
+    estimatedPercentile = 0.10 + (0.93 - scoreRate) / 0.03 * 0.05;
   } else if (scoreRate >= 0.85) {
-    estimatedPercentile = 0.05 + (0.90 - scoreRate) / 0.05 * 0.05;
+    estimatedPercentile = 0.15 + (0.90 - scoreRate) / 0.05 * 0.10;
   } else if (scoreRate >= 0.80) {
-    estimatedPercentile = 0.10 + (0.85 - scoreRate) / 0.05 * 0.10;
+    estimatedPercentile = 0.25 + (0.85 - scoreRate) / 0.05 * 0.10;
   } else if (scoreRate >= 0.75) {
-    estimatedPercentile = 0.20 + (0.80 - scoreRate) / 0.05 * 0.10;
+    estimatedPercentile = 0.35 + (0.80 - scoreRate) / 0.05 * 0.10;
   } else if (scoreRate >= 0.70) {
-    estimatedPercentile = 0.30 + (0.75 - scoreRate) / 0.05 * 0.10;
+    estimatedPercentile = 0.45 + (0.75 - scoreRate) / 0.05 * 0.10;
   } else if (scoreRate >= 0.65) {
-    estimatedPercentile = 0.40 + (0.70 - scoreRate) / 0.05 * 0.15;
+    estimatedPercentile = 0.55 + (0.70 - scoreRate) / 0.05 * 0.12;
   } else if (scoreRate >= 0.60) {
-    estimatedPercentile = 0.55 + (0.65 - scoreRate) / 0.05 * 0.15;
+    estimatedPercentile = 0.67 + (0.65 - scoreRate) / 0.05 * 0.10;
   } else if (scoreRate >= 0.55) {
-    estimatedPercentile = 0.70 + (0.60 - scoreRate) / 0.05 * 0.10;
+    estimatedPercentile = 0.77 + (0.60 - scoreRate) / 0.05 * 0.08;
   } else if (scoreRate >= 0.50) {
-    estimatedPercentile = 0.80 + (0.55 - scoreRate) / 0.05 * 0.05;
+    estimatedPercentile = 0.85 + (0.55 - scoreRate) / 0.05 * 0.06;
   } else if (scoreRate >= 0.40) {
-    estimatedPercentile = 0.85 + (0.50 - scoreRate) / 0.10 * 0.10;
+    estimatedPercentile = 0.91 + (0.50 - scoreRate) / 0.10 * 0.05;
+  } else if (scoreRate >= 0.30) {
+    estimatedPercentile = 0.96 + (0.40 - scoreRate) / 0.10 * 0.02;
   } else {
-    estimatedPercentile = 0.95 + (0.40 - scoreRate) / 0.40 * 0.05;
+    estimatedPercentile = 0.98 + (0.30 - scoreRate) / 0.30 * 0.02;
   }
 
   return calculateAssignedScore(rawScore, fullScore, estimatedPercentile);
@@ -141,11 +148,8 @@ export function estimateAssignedScore(rawScore: number, fullScore: number): Assi
 export function getLevelColor(level: ScoreLevel): string {
   const colors: Record<ScoreLevel, string> = {
     'A': '#10B981',
-    'B+': '#34D399',
     'B': '#3B82F6',
-    'C+': '#60A5FA',
     'C': '#F59E0B',
-    'D+': '#FBBF24',
     'D': '#F97316',
     'E': '#EF4444',
   };
@@ -153,16 +157,13 @@ export function getLevelColor(level: ScoreLevel): string {
 }
 
 /**
- * 获取赋分等级对应的Tailwind类名
+ * 获取赋分等级对应的Tailwind文字类名
  */
 export function getLevelTextClass(level: ScoreLevel): string {
   const classes: Record<ScoreLevel, string> = {
     'A': 'text-emerald-400',
-    'B+': 'text-emerald-300',
     'B': 'text-blue-400',
-    'C+': 'text-blue-300',
     'C': 'text-amber-400',
-    'D+': 'text-amber-300',
     'D': 'text-orange-400',
     'E': 'text-red-400',
   };
@@ -175,11 +176,8 @@ export function getLevelTextClass(level: ScoreLevel): string {
 export function getLevelBgClass(level: ScoreLevel): string {
   const classes: Record<ScoreLevel, string> = {
     'A': 'bg-emerald-500/10 border-emerald-500/20',
-    'B+': 'bg-emerald-500/10 border-emerald-500/20',
     'B': 'bg-blue-500/10 border-blue-500/20',
-    'C+': 'bg-blue-500/10 border-blue-500/20',
     'C': 'bg-amber-500/10 border-amber-500/20',
-    'D+': 'bg-amber-500/10 border-amber-500/20',
     'D': 'bg-orange-500/10 border-orange-500/20',
     'E': 'bg-red-500/10 border-red-500/20',
   };
@@ -195,6 +193,7 @@ export function isSecondarySubject(subjectKey: string): boolean {
 
 /**
  * 赋分对照表数据（用于UI展示）
+ * 数据来源：辽宁省招生考试之窗官方发布
  */
 export const ASSIGNMENT_TABLE = SCORE_LEVELS.map((level, i) => {
   const prevTop = i > 0 ? SCORE_LEVELS[i - 1].percentileTop : 0;

@@ -15,6 +15,7 @@ import examRoutes from './routes/exams.js'
 import universityRoutes from './routes/universities.js'
 import ocrRoutes from './routes/ocr.js'
 import targetRoutes from './routes/targets.js'
+import dataSyncRoutes from './routes/dataSync.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -36,6 +37,7 @@ app.use('/api/exams', examRoutes)
 app.use('/api/universities', universityRoutes)
 app.use('/api/ocr', ocrRoutes)
 app.use('/api/targets', targetRoutes)
+app.use('/api/data-sync', dataSyncRoutes)
 
 /**
  * health

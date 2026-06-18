@@ -80,7 +80,33 @@ function initializeDatabase() {
       subject TEXT NOT NULL,
       score REAL NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS sync_status (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      last_sync_at DATETIME,
+      record_count INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'idle'
+    );
+
+    CREATE TABLE IF NOT EXISTS gaokao_admission_scores (
+      id TEXT PRIMARY KEY,
+      university_id TEXT NOT NULL REFERENCES universities(id),
+      year INTEGER NOT NULL,
+      category TEXT NOT NULL,
+      batch TEXT NOT NULL,
+      min_score REAL,
+      min_rank INTEGER,
+      avg_score REAL,
+      UNIQUE(university_id, year, category, batch)
+    );
   `)
+
+  // Add gaokao_id column to universities if not exists
+  const columns = db.prepare("PRAGMA table_info(universities)").all() as { name: string }[]
+  if (!columns.some(col => col.name === 'gaokao_id')) {
+    db.exec('ALTER TABLE universities ADD COLUMN gaokao_id TEXT')
+  }
 
   seedUniversities()
 }
