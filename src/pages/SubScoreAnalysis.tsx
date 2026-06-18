@@ -23,7 +23,9 @@ import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
-import { getSubjectName } from '@/shared/subjects';
+import { getSubjectName, SUBJECT_CONFIG } from '@/shared/subjects';
+import { isSecondarySubject, estimateAssignedScore } from '@/shared/assignmentScore';
+import { calculateExamAssignedScores } from '@/utils/scoreCalc';
 
 const COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
 
@@ -85,7 +87,7 @@ export default function SubScoreAnalysis() {
   }, [fetchExams]);
 
   const sortedExams = useMemo(
-    () => [...exams].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    () => exams.map(calculateExamAssignedScores).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [exams]
   );
 
@@ -232,6 +234,7 @@ export default function SubScoreAnalysis() {
           <div className="flex flex-wrap gap-2">
             {allSubjectKeys.map((key) => {
               const isActive = selectedSubject === key;
+              const isSec = isSecondarySubject(key);
               return (
                 <button
                   key={key}
@@ -243,12 +246,50 @@ export default function SubScoreAnalysis() {
                   }`}
                 >
                   {getSubjectName(key)}
+                  {isSec && <span className="ml-1 text-cyan-400/60 text-[10px]">赋分</span>}
                 </button>
               );
             })}
           </div>
         </GlassCard>
       </motion.div>
+
+      {/* Assignment Score Info for Secondary Subjects */}
+      {selectedSubject && isSecondarySubject(selectedSubject) && (() => {
+        const latest = sortedExams[sortedExams.length - 1];
+        const subject = latest?.subjects.find((s) => s.subject === selectedSubject);
+        if (!subject) return null;
+        const result = estimateAssignedScore(subject.totalScore, subject.fullScore);
+        return (
+          <motion.div variants={item}>
+            <GlassCard className="p-5 border-cyan-500/20">
+              <h3 className="mb-3 text-sm font-medium text-cyan-400/80">等级赋分信息 · {getSubjectName(selectedSubject)}</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-xs text-white/40 mb-1">卷面原始分</p>
+                  <p className="text-xl font-bold text-white">{subject.totalScore} <span className="text-sm text-white/30">/ {subject.fullScore}</span></p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">赋分等级</p>
+                  <p className={`text-xl font-bold ${result.level >= 'C' ? (result.level === 'C' ? 'text-amber-400' : result.level === 'D+' ? 'text-amber-300' : result.level === 'D' ? 'text-orange-400' : 'text-red-400') : 'text-emerald-400'}`}>
+                    {result.level}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">赋分后分数</p>
+                  <p className="text-xl font-bold text-cyan-400">{result.assignedScore}</p>
+                  <p className="text-xs text-white/30">区间 {result.scoreRange.low}-{result.scoreRange.high}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/40 mb-1">估算百分位</p>
+                  <p className="text-xl font-bold text-white">{(result.estimatedPercentile * 100).toFixed(1)}%</p>
+                  <p className="text-xs text-white/30">即排名前{((1 - result.estimatedPercentile) * 100).toFixed(1)}%</p>
+                </div>
+              </div>
+            </GlassCard>
+          </motion.div>
+        );
+      })()}
 
       {selectedSubject && (
         <>

@@ -22,6 +22,7 @@ import {
   getSubjectsForGroup,
   type SubjectKey,
 } from '@/shared/subjects';
+import { isSecondarySubject, estimateAssignedScore } from '@/shared/assignmentScore';
 import type { OcrResult, SubjectScore } from '@/shared/types';
 
 const TABS = [
@@ -463,8 +464,12 @@ export default function ScoreInput() {
               const isExpanded = expandedSubjects.has(subject.id);
               const config = SUBJECT_CONFIG[subject.subject as SubjectKey];
               const rate = subject.fullScore > 0 ? subject.totalScore / subject.fullScore : 0;
+              const isSec = isSecondarySubject(subject.subject);
+              const assignedResult = isSec && subject.totalScore > 0
+                ? estimateAssignedScore(subject.totalScore, subject.fullScore)
+                : null;
               return (
-                <GlassCard key={subject.id} className="p-4">
+                <GlassCard key={subject.id} className={`p-4 ${isSec ? 'border-cyan-500/10' : ''}`}>
                   <div
                     className="flex items-center justify-between cursor-pointer"
                     onClick={() => toggleExpand(subject.id)}
@@ -473,8 +478,13 @@ export default function ScoreInput() {
                       <span className="text-sm font-medium text-white/80">
                         {config?.name ?? subject.subject}
                       </span>
+                      {isSec && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400/80 border border-cyan-500/20">
+                          赋分
+                        </span>
+                      )}
                       <span className="text-xs text-white/30">
-                        {subject.totalScore} / {subject.fullScore}
+                        卷面 {subject.totalScore} / {subject.fullScore}
                       </span>
                       <span
                         className={`text-xs ${
@@ -483,6 +493,11 @@ export default function ScoreInput() {
                       >
                         {(rate * 100).toFixed(1)}%
                       </span>
+                      {assignedResult && (
+                        <span className="text-xs text-cyan-400">
+                          → 赋分 {assignedResult.assignedScore}（{assignedResult.level}级）
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3">
                       <input

@@ -11,6 +11,10 @@ export interface SubjectScore {
   totalScore: number;
   fullScore: number;
   subScores: SubScore[];
+  /** 再选科目赋分后分数（化学/生物/政治/地理） */
+  assignedScore?: number;
+  /** 赋分等级 */
+  assignedLevel?: string;
 }
 
 export interface Exam {

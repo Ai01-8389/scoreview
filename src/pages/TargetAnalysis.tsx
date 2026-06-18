@@ -21,6 +21,8 @@ import { ProgressRing } from '@/components/ui/ProgressRing';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { getSubjectName } from '@/shared/subjects';
+import { isSecondarySubject } from '@/shared/assignmentScore';
+import { calculateExamAssignedScores, getEffectiveScore, getEffectiveTotalScore } from '@/utils/scoreCalc';
 import type { University, Exam } from '@/shared/types';
 
 const container = {
@@ -33,7 +35,7 @@ const item = {
 };
 
 function getTotalScore(exam: Exam) {
-  return exam.subjects.reduce((sum, s) => sum + s.totalScore, 0);
+  return getEffectiveTotalScore(exam);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +61,7 @@ export default function TargetAnalysis() {
   }, [fetchExams, fetchTargets, fetchUniversities]);
 
   const sortedExams = useMemo(
-    () => [...exams].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    () => exams.map(calculateExamAssignedScores).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [exams]
   );
 
@@ -90,12 +92,13 @@ export default function TargetAnalysis() {
     const target = targets[0];
     return latestExam.subjects.map((s) => {
       const targetSubject = target.subjectScores.find((ts) => ts.subject === s.subject);
-      const targetScore = targetSubject?.score ?? Math.round(s.fullScore * 0.8);
+      const targetScore = targetSubject?.score ?? Math.round((isSecondarySubject(s.subject) ? 100 : s.fullScore) * 0.8);
+      const effective = getEffectiveScore(s);
       return {
-        name: getSubjectName(s.subject),
-        当前: s.totalScore,
+        name: getSubjectName(s.subject) + (isSecondarySubject(s.subject) ? '(赋分)' : ''),
+        当前: effective,
         目标: targetScore,
-        差距: targetScore - s.totalScore,
+        差距: targetScore - effective,
       };
     });
   }, [latestExam, targets]);
@@ -103,12 +106,16 @@ export default function TargetAnalysis() {
   // Progress rings per subject
   const subjectProgress = useMemo(() => {
     if (!latestExam) return [];
-    return latestExam.subjects.map((s) => ({
-      subject: getSubjectName(s.subject),
-      rate: s.fullScore > 0 ? s.totalScore / s.fullScore : 0,
-      score: s.totalScore,
-      fullScore: s.fullScore,
-    }));
+    return latestExam.subjects.map((s) => {
+      const effective = getEffectiveScore(s);
+      const max = isSecondarySubject(s.subject) ? 100 : s.fullScore;
+      return {
+        subject: getSubjectName(s.subject) + (isSecondarySubject(s.subject) ? '(赋分)' : ''),
+        rate: max > 0 ? effective / max : 0,
+        score: effective,
+        fullScore: max,
+      };
+    });
   }, [latestExam]);
 
   // Improvement space
@@ -118,13 +125,15 @@ export default function TargetAnalysis() {
     return latestExam.subjects
       .map((s) => {
         const targetSubject = target.subjectScores.find((ts) => ts.subject === s.subject);
-        const targetScore = targetSubject?.score ?? Math.round(s.fullScore * 0.8);
+        const targetScore = targetSubject?.score ?? Math.round((isSecondarySubject(s.subject) ? 100 : s.fullScore) * 0.8);
+        const effective = getEffectiveScore(s);
+        const max = isSecondarySubject(s.subject) ? 100 : s.fullScore;
         return {
-          subject: getSubjectName(s.subject),
-          current: s.totalScore,
+          subject: getSubjectName(s.subject) + (isSecondarySubject(s.subject) ? '(赋分)' : ''),
+          current: effective,
           target: targetScore,
-          gap: targetScore - s.totalScore,
-          rate: s.fullScore > 0 ? s.totalScore / s.fullScore : 0,
+          gap: targetScore - effective,
+          rate: max > 0 ? effective / max : 0,
         };
       })
       .filter((d) => d.gap > 0)

@@ -24,6 +24,8 @@ import { AnimatedNumber } from '@/components/ui/AnimatedNumber';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { getSubjectName } from '@/shared/subjects';
+import { isSecondarySubject } from '@/shared/assignmentScore';
+import { calculateExamAssignedScores, getEffectiveScore, getEffectiveTotalScore } from '@/utils/scoreCalc';
 import type { Exam } from '@/shared/types';
 
 const COLORS = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
@@ -38,7 +40,7 @@ const item = {
 };
 
 function getTotalScore(exam: Exam) {
-  return exam.subjects.reduce((sum, s) => sum + s.totalScore, 0);
+  return getEffectiveTotalScore(exam);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,7 +80,7 @@ export default function Compare() {
   }, [fetchExams]);
 
   const sortedExams = useMemo(
-    () => [...exams].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+    () => exams.map(calculateExamAssignedScores).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [exams]
   );
 
@@ -115,7 +117,7 @@ export default function Compare() {
     () =>
       sortedExams.map((exam) => ({
         name: exam.name,
-        总分: getTotalScore(exam),
+        总分: getEffectiveTotalScore(exam),
       })),
     [sortedExams]
   );
@@ -127,7 +129,8 @@ export default function Compare() {
         const row: Record<string, string | number> = { name: exam.name };
         exam.subjects.forEach((s) => {
           if (selectedSubjects.has(s.subject)) {
-            row[getSubjectName(s.subject)] = s.totalScore;
+            const label = getSubjectName(s.subject) + (isSecondarySubject(s.subject) ? '(赋分)' : '');
+            row[label] = getEffectiveScore(s);
           }
         });
         return row;
@@ -138,9 +141,9 @@ export default function Compare() {
   const subjectTrendLines = useMemo(
     () =>
       Array.from(selectedSubjects).map((key, i) => ({
-        dataKey: getSubjectName(key),
+        dataKey: getSubjectName(key) + (isSecondarySubject(key) ? '(赋分)' : ''),
         color: COLORS[i % COLORS.length],
-        name: getSubjectName(key),
+        name: getSubjectName(key) + (isSecondarySubject(key) ? '(赋分)' : ''),
       })),
     [selectedSubjects]
   );
@@ -155,10 +158,11 @@ export default function Compare() {
     examA.subjects.forEach((s) => allKeys.add(s.subject));
     examB.subjects.forEach((s) => allKeys.add(s.subject));
     return Array.from(allKeys).map((key) => {
-      const scoreA = examA.subjects.find((s) => s.subject === key)?.totalScore ?? 0;
-      const scoreB = examB.subjects.find((s) => s.subject === key)?.totalScore ?? 0;
+      const scoreA = getEffectiveScore(examA.subjects.find((s) => s.subject === key)!);
+      const scoreB = getEffectiveScore(examB.subjects.find((s) => s.subject === key)!);
+      const label = getSubjectName(key) + (isSecondarySubject(key) ? '(赋分)' : '');
       return {
-        name: getSubjectName(key),
+        name: label,
         差值: scoreB - scoreA,
         [examA.name]: scoreA,
         [examB.name]: scoreB,

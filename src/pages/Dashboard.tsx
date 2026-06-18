@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, Trophy, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Trophy, ArrowRight, Info } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/store/useStore';
 import { GlassCard } from '@/components/ui/GlassCard';
@@ -10,6 +10,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Loading } from '@/components/ui/Loading';
 import { ScoreRadarChart } from '@/components/charts/ScoreRadarChart';
 import { getSubjectName } from '@/shared/subjects';
+import { isSecondarySubject, estimateAssignedScore, getLevelTextClass, ASSIGNMENT_TABLE } from '@/shared/assignmentScore';
+import { calculateExamAssignedScores, getEffectiveScore, getEffectiveTotalScore, getEffectiveFullScore } from '@/utils/scoreCalc';
 import type { Exam, SubjectScore } from '@/shared/types';
 
 const container = {
@@ -22,16 +24,10 @@ const item = {
   show: { opacity: 1, y: 0 },
 };
 
-function getTotalScore(exam: Exam) {
-  return exam.subjects.reduce((sum, s) => sum + s.totalScore, 0);
-}
-
-function getTotalFullScore(exam: Exam) {
-  return exam.subjects.reduce((sum, s) => sum + s.fullScore, 0);
-}
-
 function getScoreRate(subject: SubjectScore) {
-  return subject.fullScore > 0 ? subject.totalScore / subject.fullScore : 0;
+  const effective = getEffectiveScore(subject);
+  const max = isSecondarySubject(subject.subject) ? 100 : subject.fullScore;
+  return max > 0 ? effective / max : 0;
 }
 
 export default function Dashboard() {
@@ -42,17 +38,20 @@ export default function Dashboard() {
     fetchExams();
   }, [fetchExams]);
 
-  const sortedExams = useMemo(
-    () => [...exams].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+  const processedExams = useMemo(
+    () => exams.map(calculateExamAssignedScores).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [exams]
   );
 
-  const latestExam = sortedExams[0];
-  const previousExam = sortedExams[1];
+  const latestExam = processedExams[0];
+  const previousExam = processedExams[1];
+
+  const effectiveTotal = latestExam ? getEffectiveTotalScore(latestExam) : 0;
+  const effectiveFull = latestExam ? getEffectiveFullScore(latestExam) : 750;
 
   const totalChange = useMemo(() => {
     if (!latestExam || !previousExam) return null;
-    return getTotalScore(latestExam) - getTotalScore(previousExam);
+    return getEffectiveTotalScore(latestExam) - getEffectiveTotalScore(previousExam);
   }, [latestExam, previousExam]);
 
   const bestSubject = useMemo(() => {
@@ -72,14 +71,17 @@ export default function Dashboard() {
 
   const diagnosis = useMemo(() => {
     if (!latestExam || !previousExam) return { improved: [], declined: [] };
-    const improved: { name: string; change: number }[] = [];
-    const declined: { name: string; change: number }[] = [];
+    const improved: { name: string; change: number; isSecondary: boolean }[] = [];
+    const declined: { name: string; change: number; isSecondary: boolean }[] = [];
     for (const curr of latestExam.subjects) {
       const prev = previousExam.subjects.find((s) => s.subject === curr.subject);
       if (prev) {
-        const change = curr.totalScore - prev.totalScore;
-        if (change > 0) improved.push({ name: getSubjectName(curr.subject), change });
-        else if (change < 0) declined.push({ name: getSubjectName(curr.subject), change });
+        const currEffective = getEffectiveScore(curr);
+        const prevEffective = getEffectiveScore(prev);
+        const change = currEffective - prevEffective;
+        const sec = isSecondarySubject(curr.subject);
+        if (change > 0) improved.push({ name: getSubjectName(curr.subject), change, isSecondary: sec });
+        else if (change < 0) declined.push({ name: getSubjectName(curr.subject), change, isSecondary: sec });
       }
     }
     return { improved, declined };
@@ -106,9 +108,6 @@ export default function Dashboard() {
     );
   }
 
-  const totalScore = getTotalScore(latestExam);
-  const totalFull = getTotalFullScore(latestExam);
-
   return (
     <motion.div
       className="p-6 space-y-6"
@@ -128,11 +127,12 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <motion.div variants={item}>
           <GlassCard className="p-5 glow-blue" whileHover={{ y: -2 }}>
-            <p className="text-xs text-white/50 mb-2">最新总分</p>
+            <p className="text-xs text-white/50 mb-2">赋分后总分</p>
             <div className="flex items-end gap-2">
-              <AnimatedNumber value={totalScore} className="text-3xl font-bold text-white" />
-              <span className="text-sm text-white/30 mb-1">/ {totalFull}</span>
+              <AnimatedNumber value={effectiveTotal} className="text-3xl font-bold text-white" />
+              <span className="text-sm text-white/30 mb-1">/ {effectiveFull}</span>
             </div>
+            <p className="mt-1 text-xs text-cyan-400/60">再选科目已按等级赋分计算</p>
           </GlassCard>
         </motion.div>
 
@@ -175,22 +175,90 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
+      {/* Subject Scores with Assignment */}
+      <motion.div variants={item}>
+        <GlassCard className="p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <h3 className="text-sm font-medium text-white/70">各科成绩（含赋分）</h3>
+            <div className="group relative">
+              <Info className="h-3.5 w-3.5 text-white/30 cursor-help" />
+              <div className="absolute left-0 top-6 z-20 hidden group-hover:block w-72 rounded-xl border border-white/10 bg-slate-900/95 p-3 backdrop-blur-xl shadow-xl">
+                <p className="text-xs text-white/60 mb-2 font-medium">辽宁新高考等级赋分制</p>
+                <p className="text-xs text-white/40 mb-2">再选科目（化学/生物/政治/地理）按全省排名百分位赋分，统考和首选科目使用原始分。</p>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-white/5">
+                      <th className="py-1 text-left text-white/40 font-normal">等级</th>
+                      <th className="py-1 text-left text-white/40 font-normal">比例</th>
+                      <th className="py-1 text-right text-white/40 font-normal">赋分</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ASSIGNMENT_TABLE.map((row) => (
+                      <tr key={row.level} className="border-b border-white/5">
+                        <td className="py-1 text-white/70">{row.level}</td>
+                        <td className="py-1 text-white/50">{row.proportion}</td>
+                        <td className="py-1 text-right text-cyan-400">{row.scoreRange}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {latestExam.subjects.map((s) => {
+              const effective = getEffectiveScore(s);
+              const rate = getScoreRate(s);
+              const isSecondary = isSecondarySubject(s.subject);
+              return (
+                <div
+                  key={s.subject}
+                  className={`rounded-xl p-3 border ${
+                    isSecondary
+                      ? 'bg-cyan-500/5 border-cyan-500/15'
+                      : 'bg-white/5 border-white/5'
+                  }`}
+                >
+                  <p className="text-xs text-white/50 mb-1">{getSubjectName(s.subject)}</p>
+                  <p className="text-xl font-bold text-white">{effective}</p>
+                  <p className="text-xs text-white/30">
+                    {isSecondary ? `卷面${s.totalScore}` : `满分${s.fullScore}`}
+                  </p>
+                  {isSecondary && s.assignedLevel && (
+                    <span className={`inline-block mt-1 text-xs font-medium ${getLevelTextClass(s.assignedLevel as any)}`}>
+                      {s.assignedLevel}级
+                    </span>
+                  )}
+                  <div className="mt-1.5 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${rate >= 0.7 ? 'bg-emerald-500' : rate >= 0.5 ? 'bg-amber-500' : 'bg-red-500'}`}
+                      style={{ width: `${rate * 100}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </GlassCard>
+      </motion.div>
+
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div variants={item}>
-          <ScoreRadarChart data={radarData} title="各科得分率" />
+          <ScoreRadarChart data={radarData} title="各科得分率（赋分后）" />
         </motion.div>
 
         <motion.div variants={item}>
           <GlassCard className="p-5 flex flex-col items-center" glow>
             <h3 className="mb-4 text-sm font-medium text-white/70 self-start">综合得分率</h3>
             <ProgressRing
-              value={totalScore}
-              max={totalFull}
+              value={effectiveTotal}
+              max={effectiveFull}
               size={200}
               strokeWidth={12}
-              label={`${totalScore} / ${totalFull}`}
-              sublabel="总分"
+              label={`${effectiveTotal} / ${effectiveFull}`}
+              sublabel="赋分后总分"
             />
           </GlassCard>
         </motion.div>
@@ -207,7 +275,7 @@ export default function Dashboard() {
                 className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-400 border border-emerald-500/20"
               >
                 <TrendingUp className="h-3.5 w-3.5" />
-                {d.name} +{d.change}
+                {d.name} +{d.change}{d.isSecondary ? '(赋分)' : ''}
               </span>
             ))}
             {diagnosis.declined.map((d) => (
@@ -216,7 +284,7 @@ export default function Dashboard() {
                 className="inline-flex items-center gap-1.5 rounded-full bg-red-500/10 px-3 py-1.5 text-sm text-red-400 border border-red-500/20"
               >
                 <TrendingDown className="h-3.5 w-3.5" />
-                {d.name} {d.change}
+                {d.name} {d.change}{d.isSecondary ? '(赋分)' : ''}
               </span>
             ))}
             {diagnosis.improved.length === 0 && diagnosis.declined.length === 0 && (
@@ -244,14 +312,14 @@ export default function Dashboard() {
                 <tr className="border-b border-white/5">
                   <th className="py-2 text-left text-white/40 font-normal">考试名称</th>
                   <th className="py-2 text-left text-white/40 font-normal">日期</th>
-                  <th className="py-2 text-right text-white/40 font-normal">总分</th>
+                  <th className="py-2 text-right text-white/40 font-normal">赋分总分</th>
                   <th className="py-2 text-right text-white/40 font-normal">得分率</th>
                 </tr>
               </thead>
               <tbody>
-                {sortedExams.slice(0, 5).map((exam) => {
-                  const total = getTotalScore(exam);
-                  const full = getTotalFullScore(exam);
+                {processedExams.slice(0, 5).map((exam) => {
+                  const total = getEffectiveTotalScore(exam);
+                  const full = getEffectiveFullScore(exam);
                   return (
                     <tr key={exam.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                       <td className="py-2.5 text-white/80">{exam.name}</td>
