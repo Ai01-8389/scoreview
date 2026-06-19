@@ -1,46 +1,26 @@
 import { create } from 'zustand';
 import type { Exam, University, TargetUniversity } from '@/shared/types';
-import { fetchApi, postApi, putApi, deleteApi } from '@/utils/api';
 
-// Transform API snake_case to frontend camelCase
-function transformExam(raw: any): Exam {
-  return {
-    id: raw.id,
-    name: raw.name,
-    date: raw.date,
-    subjectGroup: raw.subject_group,
-    subjects: (raw.subject_scores || []).map((ss: any) => ({
-      id: ss.id,
-      subject: ss.subject,
-      totalScore: ss.total_score,
-      fullScore: ss.full_score,
-      subScores: (ss.sub_scores || []).map((sub: any) => ({
-        id: sub.id,
-        category: sub.category,
-        score: sub.score,
-        fullScore: sub.full_score,
-      })),
-    })),
-    createdAt: raw.created_at,
-  };
+const STORAGE_KEYS = {
+  exams: 'gaokao-exams',
+  targets: 'gaokao-targets',
+} as const;
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-function transformTarget(raw: any): TargetUniversity {
-  return {
-    id: raw.id,
-    universityId: raw.university_id,
-    university: raw.university ? {
-      id: raw.university.id,
-      name: raw.university.name,
-      province: raw.university.province,
-      type: raw.university.type,
-    } : undefined,
-    subjectScores: (raw.subject_scores || []).map((ss: any) => ({
-      subject: ss.subject,
-      score: ss.score,
-    })),
-    createdAt: raw.created_at,
-  };
+function saveToStorage<T>(key: string, data: T): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.error('LocalStorage save failed:', e);
+  }
 }
 
 interface AppState {
@@ -64,9 +44,9 @@ interface AppState {
   setSelectedSubject: (subject: string | null) => void;
 }
 
-export const useStore = create<AppState>((set) => ({
-  exams: [],
-  targets: [],
+export const useStore = create<AppState>((set, get) => ({
+  exams: loadFromStorage<Exam[]>(STORAGE_KEYS.exams, []),
+  targets: loadFromStorage<TargetUniversity[]>(STORAGE_KEYS.targets, []),
   universities: [],
   currentExam: null,
   selectedSubject: null,
@@ -76,8 +56,7 @@ export const useStore = create<AppState>((set) => ({
   fetchExams: async () => {
     set({ loading: true, error: null });
     try {
-      const rawExams = await fetchApi<any[]>('/exams');
-      const exams = rawExams.map(transformExam);
+      const exams = loadFromStorage<Exam[]>(STORAGE_KEYS.exams, []);
       set({ exams, loading: false });
     } catch (e) {
       set({ error: (e as Error).message, loading: false });
@@ -87,8 +66,7 @@ export const useStore = create<AppState>((set) => ({
   fetchTargets: async () => {
     set({ loading: true, error: null });
     try {
-      const rawTargets = await fetchApi<any[]>('/targets');
-      const targets = rawTargets.map(transformTarget);
+      const targets = loadFromStorage<TargetUniversity[]>(STORAGE_KEYS.targets, []);
       set({ targets, loading: false });
     } catch (e) {
       set({ error: (e as Error).message, loading: false });
@@ -98,91 +76,65 @@ export const useStore = create<AppState>((set) => ({
   fetchUniversities: async () => {
     set({ loading: true, error: null });
     try {
-      const result = await fetchApi<{ total: number; items: any[] }>('/universities');
-      const universities = result.items.map((u: any) => ({
-        id: u.id,
-        name: u.name,
-        province: u.province,
-        type: u.type,
-      }));
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const res = await fetch(`${baseUrl}universities.json`);
+      const universities: University[] = await res.json();
       set({ universities, loading: false });
     } catch (e) {
-      set({ error: (e as Error).message, loading: false });
+      console.error('Failed to load universities:', e);
+      set({ universities: [], loading: false });
     }
   },
 
   addExam: async (examData) => {
-    const payload = {
-      name: examData.name,
-      date: examData.date,
-      subject_group: examData.subjectGroup,
-      subject_scores: examData.subjects.map((s) => ({
-        subject: s.subject,
-        total_score: s.totalScore,
-        full_score: s.fullScore,
-        sub_scores: s.subScores.map((sub) => ({
-          category: sub.category,
-          score: sub.score,
-          full_score: sub.fullScore,
-        })),
-      })),
+    const exam: Exam = {
+      ...examData,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
     };
-    const raw = await postApi<any>('/exams', payload);
-    const exam = transformExam(raw);
-    set((state) => ({ exams: [...state.exams, exam] }));
+    const exams = [...get().exams, exam];
+    saveToStorage(STORAGE_KEYS.exams, exams);
+    set({ exams });
     return exam;
   },
 
   updateExam: async (id, examData) => {
-    const payload: any = {};
-    if (examData.name !== undefined) payload.name = examData.name;
-    if (examData.date !== undefined) payload.date = examData.date;
-    if (examData.subjectGroup !== undefined) payload.subject_group = examData.subjectGroup;
-    if (examData.subjects !== undefined) {
-      payload.subject_scores = examData.subjects.map((s) => ({
-        subject: s.subject,
-        total_score: s.totalScore,
-        full_score: s.fullScore,
-        sub_scores: s.subScores.map((sub) => ({
-          category: sub.category,
-          score: sub.score,
-          full_score: sub.fullScore,
-        })),
-      }));
-    }
-    const raw = await putApi<any>(`/exams/${id}`, payload);
-    const updated = transformExam(raw);
+    const exams = get().exams.map((e) =>
+      e.id === id ? { ...e, ...examData } : e
+    );
+    saveToStorage(STORAGE_KEYS.exams, exams);
+    const updated = exams.find((e) => e.id === id)!;
     set((state) => ({
-      exams: state.exams.map((e) => (e.id === id ? updated : e)),
+      exams,
       currentExam: state.currentExam?.id === id ? updated : state.currentExam,
     }));
   },
 
   deleteExam: async (id) => {
-    await deleteApi(`/exams/${id}`);
+    const exams = get().exams.filter((e) => e.id !== id);
+    saveToStorage(STORAGE_KEYS.exams, exams);
     set((state) => ({
-      exams: state.exams.filter((e) => e.id !== id),
+      exams,
       currentExam: state.currentExam?.id === id ? null : state.currentExam,
     }));
   },
 
   addTarget: async (targetData) => {
-    const payload = {
-      university_id: targetData.universityId,
-      subject_scores: targetData.subjectScores.map((s) => ({
-        subject: s.subject,
-        score: s.score,
-      })),
+    const target: TargetUniversity = {
+      ...targetData,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
     };
-    const raw = await postApi<any>('/targets', payload);
-    const target = transformTarget(raw);
-    set((state) => ({ targets: [...state.targets, target] }));
+    const targets = [...get().targets, target];
+    saveToStorage(STORAGE_KEYS.targets, targets);
+    set({ targets });
     return target;
   },
 
   removeTarget: async (id) => {
-    await deleteApi(`/targets/${id}`);
-    set((state) => ({ targets: state.targets.filter((t) => t.id !== id) }));
+    const targets = get().targets.filter((t) => t.id !== id);
+    saveToStorage(STORAGE_KEYS.targets, targets);
+    set({ targets });
   },
 
   setCurrentExam: (exam) => set({ currentExam: exam }),
