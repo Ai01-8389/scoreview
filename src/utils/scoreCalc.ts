@@ -20,11 +20,16 @@ export function calculateExamAssignedScores(exam: Exam): Exam {
 }
 
 /**
- * 获取科目的有效分数（再选科目用赋分，其他用原始分）
+ * 获取科目的有效分数（再选科目：手动赋分 > 系统赋分 > 原始分）
  */
 export function getEffectiveScore(subject: SubjectScore): number {
-  if (isSecondarySubject(subject.subject) && subject.assignedScore !== undefined) {
-    return subject.assignedScore;
+  if (isSecondarySubject(subject.subject)) {
+    if (subject.manualAssignedScore !== undefined && subject.manualAssignedScore > 0) {
+      return subject.manualAssignedScore;
+    }
+    if (subject.assignedScore !== undefined) {
+      return subject.assignedScore;
+    }
   }
   return subject.totalScore;
 }

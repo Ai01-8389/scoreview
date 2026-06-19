@@ -15,6 +15,8 @@ export interface SubjectScore {
   assignedScore?: number;
   /** 赋分等级 */
   assignedLevel?: string;
+  /** 用户手动录入的赋分（优先于系统计算） */
+  manualAssignedScore?: number;
 }
 
 export interface Exam {
